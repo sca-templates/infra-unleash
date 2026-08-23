@@ -1,0 +1,34 @@
+{
+  "version": 4,
+  "features": [
+    {
+      "name": "sca-demo-flag",
+      "description": "Example toggle proving the flags-as-code seed pipeline. Safe to delete once real flags land.",
+      "type": "release",
+      "stale": false,
+      "lastSeenAt": null,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "project": "default",
+      "environments": [
+        {
+          "name": "development",
+          "enabled": true,
+          "type": "development",
+          "sortOrder": 1,
+          "strategies": [
+            {
+              "name": "flexibleRollout",
+              "title": "Gradual rollout",
+              "disabled": false,
+              "parameters": {
+                "rollout": "100",
+                "stickiness": "userId",
+                "groupId": "sca-demo-flag"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

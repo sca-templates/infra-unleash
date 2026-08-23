@@ -1,0 +1,92 @@
+# =============================================================================
+# Unleash Validate Pipeline — PRs and pushes to main
+# Static validation of configs and docs without needing the running stack
+# =============================================================================
+
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  config:
+    name: Config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint shell scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: "./scripts"
+
+      - name: Validate compose file
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yml config --quiet
+
+      - name: Parse flags-as-code seed
+        run: python3 -m json.tool unleash/sca-flags.json > /dev/null && echo "[OK] sca-flags.json parses"
+
+      - name: Check flags-as-code invariants
+        run: |
+          python3 - <<'PY'
+          import json
+          seed = json.load(open("unleash/sca-flags.json"))
+          assert seed["version"] == 4, "Unleash export format v4"
+          names = {f["name"] for f in seed["features"]}
+          assert "sca-demo-flag" in names, "seed pipeline flag must exist"
+          for f in seed["features"]:
+              assert f["project"] == "default", "single default project (dev)"
+              for env in f.get("environments", []):
+                  assert env["strategies"], "every enabled env needs at least one strategy"
+          print("[OK] flags-as-code invariants hold")
+          PY
+
+      - name: Check .env.example has all required keys
+        run: |
+          REQUIRED_KEYS=(
+            ENVIRONMENT
+            UNLEASH_PORT
+            UNLEASH_ADMIN_USERNAME
+            UNLEASH_ADMIN_PASSWORD
+            UNLEASH_DB_PASSWORD
+          )
+          for key in "${REQUIRED_KEYS[@]}"; do
+            grep -q "^${key}=" .env.example \
+              && echo "[OK] ${key}" \
+              || (echo "[FAIL] Missing key: ${key}" && exit 1)
+          done
+
+  markdown:
+    name: Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: markdownlint
+        run: npx --yes markdownlint-cli2 README.md AGENTS.md CLAUDE.md .github/PULL_REQUEST_TEMPLATE.md .github/CONTRIBUTING.md docs/**/*.md .claude/skills/**/SKILL.md .opencode/command/*.md
+
+      - name: Check links
+        run: |
+          for f in README.md .github/PULL_REQUEST_TEMPLATE.md .github/CONTRIBUTING.md; do
+            npx --yes markdown-link-check \
+              -c .github/markdown-link-check.json \
+              "$f"
+          done
